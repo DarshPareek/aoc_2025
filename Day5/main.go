@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-// Range struct makes handling start/end pairs easier to read
 type Range struct {
 	Start int
 	End   int
@@ -32,7 +31,6 @@ func readInput(filepath string) ([]string, []string, error) {
 		return nil, nil, err
 	}
 
-	// Split ranges and ingredients based on the empty line
 	var ranges []string
 	var ing []string
 	for i, line := range lines {
@@ -44,8 +42,6 @@ func readInput(filepath string) ([]string, []string, error) {
 			break
 		}
 	}
-
-	// Fallback if no empty line found (all ranges)
 	if len(ranges) == 0 && len(ing) == 0 {
 		ranges = lines
 	}
@@ -67,56 +63,31 @@ func parseRanges(rawRanges []string) []Range {
 	return ranges
 }
 
-// part2 calculates the number of unique integers covered by the ranges
 func part2(rawRanges []string) int {
 	ranges := parseRanges(rawRanges)
-
-	// 1. Sort ranges by start value
 	sort.Slice(ranges, func(i, j int) bool {
 		return ranges[i].Start < ranges[j].Start
 	})
-
 	if len(ranges) == 0 {
 		return 0
 	}
-
-	// 2. Merge overlapping intervals
-	var merged []Range
-	merged = append(merged, ranges[0])
-
-	for i := 1; i < len(ranges); i++ {
-		current := ranges[i]
-		lastMerged := &merged[len(merged)-1]
-
-		// Check for overlap.
-		// Since we sorted by Start, we only need to check if current.Start <= lastMerged.End
-		// We use `+1` here to merge touching ranges (e.g. 3-4 and 5-6 become 3-6),
-		// though strictly for counting it doesn't change the math, it keeps the list cleaner.
-		if current.Start <= lastMerged.End+1 {
-			// If the current range goes further than the previous one, extend the previous one
-			if current.End > lastMerged.End {
-				lastMerged.End = current.End
-			}
-		} else {
-			// No overlap, start a new range
-			merged = append(merged, current)
+	p2 := 0
+	current := -1
+	for i := 0; i < len(ranges); i++ {
+		if current >= ranges[i].Start {
+			ranges[i].Start = current + 1
 		}
+		if ranges[i].Start <= ranges[i].End {
+			p2 += ranges[i].End - ranges[i].Start + 1
+		}
+		current = max(ranges[i].End, current)
 	}
 
-	// 3. Count the total integers in the merged, disjoint ranges
-	count := 0
-	for _, r := range merged {
-		count += (r.End - r.Start) + 1
-	}
-
-	return count
+	return p2
 }
 
-// part1 (kept largely the same but cleaned up slightly)
 func part1(rawRanges []string, ing []string) int {
-	// Parse ranges once for performance
 	ranges := parseRanges(rawRanges)
-
 	res := 0
 	for _, rawN := range ing {
 		n, _ := strconv.Atoi(rawN)
@@ -135,7 +106,6 @@ func part1(rawRanges []string, ing []string) int {
 }
 
 func main() {
-	// Ensure input.txt exists in the same directory
 	ranges, ing, err := readInput("./input.txt")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
