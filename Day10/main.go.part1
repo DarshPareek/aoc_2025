@@ -1,0 +1,213 @@
+package main
+
+import (
+	"bufio"
+	"container/heap"
+	"fmt"
+	"math"
+	"os"
+	"strconv"
+	"strings"
+)
+
+// Machine represents the puzzle input for one machine
+type Machine struct {
+	ID          int
+	TargetState int // Bitmask: 1 is #, 0 is .
+	NumLights   int
+	Buttons     []int // Each button is a bitmask
+}
+
+// --- Priority Queue Implementation for A* ---
+type Item struct {
+	state     int // Current bitmask of lights
+	steps     int // g(n): cost so far
+	heuristic int // h(n): estimated cost to goal
+	index     int // index in heap
+}
+
+type PriorityQueue []*Item
+
+func (pq PriorityQueue) Len() int { return len(pq) }
+
+func (pq PriorityQueue) Less(i, j int) bool {
+	// We want the lowest f(n) = g(n) + h(n)
+	return (pq[i].steps + pq[i].heuristic) < (pq[j].steps + pq[j].heuristic)
+}
+
+func (pq PriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+
+func (pq *PriorityQueue) Push(x interface{}) {
+	n := len(*pq)
+	item := x.(*Item)
+	item.index = n
+	*pq = append(*pq, item)
+}
+
+func (pq *PriorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = nil
+	item.index = -1
+	*pq = old[0 : n-1]
+	return item
+}
+
+// --- Helper Functions ---
+
+// Convert string "[.##.]" to integer bitmask
+func parseLightString(s string) (int, int) {
+	s = strings.Trim(s, "[]")
+	mask := 0
+	for i, char := range s {
+		if char == '#' {
+			// Set the bit at index i
+			mask |= (1 << i)
+		}
+	}
+	return mask, len(s)
+}
+
+// Convert button string "(0,2,3)" to integer bitmask
+func parseButton(s string) int {
+	s = strings.Trim(s, "()")
+	parts := strings.Split(s, ",")
+	mask := 0
+	for _, p := range parts {
+		idx, _ := strconv.Atoi(p)
+		mask |= (1 << idx)
+	}
+	return mask
+}
+
+// Count set bits (Hamming Weight) for heuristic
+func countBits(n int) int {
+	count := 0
+	for n > 0 {
+		n &= (n - 1)
+		count++
+	}
+	return count
+}
+
+// A* Search Algorithm
+func solveMachine(m Machine) int {
+	startState := 0 // All lights initially off
+
+	// Check edge case: already solved?
+	if startState == m.TargetState {
+		return 0
+	}
+
+	pq := &PriorityQueue{}
+	heap.Init(pq)
+
+	// Determine max bits flipped by any single button for admissible heuristic
+	maxFlip := 1
+	for _, b := range m.Buttons {
+		if c := countBits(b); c > maxFlip {
+			maxFlip = c
+		}
+	}
+
+	// Heuristic: Hamming distance (wrong bits) / Max bits we can fix in one press
+	// This ensures we never overestimate, keeping A* optimal.
+	h := func(curr int) int {
+		diff := curr ^ m.TargetState
+		return int(math.Ceil(float64(countBits(diff)) / float64(maxFlip)))
+	}
+
+	startItem := &Item{
+		state:     startState,
+		steps:     0,
+		heuristic: h(startState),
+	}
+	heap.Push(pq, startItem)
+
+	// Keep track of visited states to prevent cycles and redundant work
+	visited := make(map[int]int) // map[state]min_steps
+	visited[startState] = 0
+
+	for pq.Len() > 0 {
+		current := heap.Pop(pq).(*Item)
+
+		// Check if we reached the target
+		if current.state == m.TargetState {
+			return current.steps
+		}
+
+		// If we found a faster way to this state already, skip
+		if v, ok := visited[current.state]; ok && v < current.steps {
+			continue
+		}
+
+		// Try pressing each button
+		for _, buttonMask := range m.Buttons {
+			nextState := current.state ^ buttonMask // XOR toggles the lights
+			nextSteps := current.steps + 1
+
+			// If we haven't visited this state, or found a shorter path to it
+			if v, ok := visited[nextState]; !ok || nextSteps < v {
+				visited[nextState] = nextSteps
+				heap.Push(pq, &Item{
+					state:     nextState,
+					steps:     nextSteps,
+					heuristic: h(nextState),
+				})
+			}
+		}
+	}
+
+	return -1 // Unsolvable
+}
+
+func main() {
+	// 1. Read Input
+	file, err := os.Open("input.txt")
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	var machines []Machine
+	scanner := bufio.NewScanner(file)
+
+	// 2. Parse Logic
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Fields(line) // Fields handles multiple spaces better than Split
+		if len(parts) < 3 {
+			continue
+		}
+
+		targetMask, numLights := parseLightString(parts[0])
+		var buttons []int
+
+		// Loop through middle parts (buttons)
+		// We stop before the last part which is {joltage}
+		for i := 1; i < len(parts)-1; i++ {
+			buttons = append(buttons, parseButton(parts[i]))
+		}
+
+		machines = append(machines, Machine{
+			TargetState: targetMask,
+			NumLights:   numLights,
+			Buttons:     buttons,
+		})
+	}
+
+	// 3. Solve
+	totalPresses := 0
+	for i, m := range machines {
+		presses := solveMachine(m)
+		fmt.Printf("Machine %d: %d presses\n", i+1, presses)
+		totalPresses += presses
+	}
+	fmt.Println("Total Presses:", totalPresses)
+}
